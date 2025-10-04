@@ -17,11 +17,13 @@ typedef struct Event {
         int interval;
 } Event_t;
 
+class TimeWheel;
+typedef std::shared_ptr<TimeWheel> TimeWheelPtr;
+typedef void (*EventCallback_t)(void);
+typedef std::vector<std::list<Event_t>> EventSlotList_t;
+
 class TimeWheel {
-        typedef std::shared_ptr<TimeWheel> TimeWheelPtr;
-        typedef void (*EventCallback_t)(void);
-        typedef std::vector<std::list<Event_t>> EventSlotList_t;
-        public:
+    public:
         TimeWheel();
 
         void initTimeWheel(int steps, int maxMin);
@@ -32,7 +34,7 @@ class TimeWheel {
 
     private:
         int getCurrentMs(TimePos_t timePos);
-        int createEventId();
+        int createEventId(void);
         int processEvent(std::list<Event_t> &eventList);
         void getTriggerTimeFromInterval(int interval, TimePos_t &timePos);
         void insertEventToSlot(int interval, Event_t &event);

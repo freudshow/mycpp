@@ -5,7 +5,9 @@ using namespace std;
 
 void funccc(void)
 {
-    cout << "exec function" << endl;
+    cout << "[" << __FUNCTION__ << "()" << "]"
+            << "[" << __LINE__ << "]"
+            << "exec function" << endl;
 }
 
 int main()

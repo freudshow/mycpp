@@ -16,6 +16,13 @@ TimeWheel::TimeWheel()
     memset(&m_timePos, 0, sizeof(m_timePos));
 }
 
+/*********************************************************
+ * loop thread function
+ * -------------------------------------------------------
+ * @param[in] arg - TimeWheel object pointer
+ * -------------------------------------------------------
+ * @return: void* nullptr
+ ********************************************************/
 void* TimeWheel::loopForInterval(void *arg)
 {
     if (arg == NULL)
@@ -67,7 +74,15 @@ void* TimeWheel::loopForInterval(void *arg)
     return nullptr;
 }
 
-//init TimeWheel's step and maxmin, which detemine the max period of this wheel
+/***************************************************************
+ * init TimeWheel's step and maxmin,
+ * which detemine the max period of this wheel
+ * -------------------------------------------------------------
+ * @param[in] steps - step of ms, should be the factor of 1000
+ * @param[in] maxMin - max minutes this wheel can support
+ * -------------------------------------------------------------
+ * @return: void* nullptr
+ **************************************************************/
 void TimeWheel::initTimeWheel(int steps, int maxMin)
 {
     if (1000 % steps != 0)
@@ -75,6 +90,7 @@ void TimeWheel::initTimeWheel(int steps, int maxMin)
         printf("invalid steps\n");
         return;
     }
+
     m_steps = steps;
     m_firstLevelCount = 1000 / steps;
     m_thirdLevelCount = maxMin;
@@ -89,6 +105,15 @@ void TimeWheel::initTimeWheel(int steps, int maxMin)
 // pthread_join(m_loopThread, NULL);
 }
 
+/***************************************************************
+ * create a timing event, which will be trigger in interval ms
+ * -------------------------------------------------------------
+ * @param[in] interval - interval of ms,
+ *                       should be the factor of steps
+ * @param[in] callback - max minutes this wheel can support
+ * -------------------------------------------------------------
+ * @return: no return
+ **************************************************************/
 void TimeWheel::createTimingEvent(int interval, EventCallback_t callback)
 {
     if (interval < m_steps || interval % m_steps != 0 || interval >= m_steps * m_firstLevelCount * m_secondLevelCount * m_thirdLevelCount)
@@ -112,11 +137,26 @@ void TimeWheel::createTimingEvent(int interval, EventCallback_t callback)
     printf("create over\n");
 }
 
-int TimeWheel::createEventId()
+/***************************************************************
+ * get a unique event id
+ * -------------------------------------------------------------
+ * @param no parameter
+ * -------------------------------------------------------------
+ * @return: a unique event id
+ **************************************************************/
+int TimeWheel::createEventId(void)
 {
     return m_increaseId++;
 }
 
+/***************************************************************************
+ * caculate which slot this interval should belong to
+ * -------------------------------------------------------------------------
+ * @param[in] interval - interval of ms
+ * @param[out] timePos - the slot position this interval should belong to
+ * -------------------------------------------------------------------------
+ * @return: no return
+ **************************************************************************/
 void TimeWheel::getTriggerTimeFromInterval(int interval, TimePos_t &timePos)
 {
 //get current time: ms
@@ -131,14 +171,27 @@ void TimeWheel::getTriggerTimeFromInterval(int interval, TimePos_t &timePos)
     timePos.pos_ms = (futureTime % 1000) / m_steps;
 
 // printf("next minPos=%d, secPos=%d, msPos=%d\n", timePos.pos_min, timePos.pos_sec, timePos.pos_ms);
-    return;
 }
 
+/***************************************************************************
+ * caculate current ms from TimePos
+ * -------------------------------------------------------------------------
+ * @param[in] timePos - the slot position
+ * -------------------------------------------------------------------------
+ * @return: current ms
+ **************************************************************************/
 int TimeWheel::getCurrentMs(TimePos_t timePos)
 {
     return m_steps * timePos.pos_ms + timePos.pos_sec * 1000 + timePos.pos_min * 60 * 1000;
 }
 
+/***************************************************************************
+ * process the events in this slot
+ * -------------------------------------------------------------------------
+ * @param[in] eventList - the event list in this slot
+ * -------------------------------------------------------------------------
+ * @return: 0 - success, other - fail
+ **************************************************************************/
 int TimeWheel::processEvent(std::list<Event_t> &eventList)
 {
 // printf("eventList.size=%d\n", eventList.size());
@@ -175,6 +228,14 @@ int TimeWheel::processEvent(std::list<Event_t> &eventList)
     return 0;
 }
 
+/***************************************************************************
+ * insert event to a slot
+ * -------------------------------------------------------------------------
+ * @param[in] interval - interval of ms
+ * @param[in] event - the event to be inserted
+ * -------------------------------------------------------------------------
+ * @return: no return
+ **************************************************************************/
 void TimeWheel::insertEventToSlot(int interval, Event_t &event)
 {
     printf("insertEventToSlot\n");
@@ -208,6 +269,4 @@ void TimeWheel::insertEventToSlot(int interval, Event_t &event)
             m_eventSlotList[timePos.pos_ms].push_back(event);
         }
     }
-
-    return;
 }
