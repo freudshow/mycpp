@@ -16,6 +16,19 @@ TimeWheel::TimeWheel()
     memset(&m_timePos, 0, sizeof(m_timePos));
 }
 
+TimeWheel::TimeWheel(uint32_t steps, uint32_t maxMin)
+{
+    m_steps = 0;
+    m_firstLevelCount = 0;
+    m_secondLevelCount = 60;
+    m_thirdLevelCount = 0;
+    m_increaseId = 0;
+    m_loopThread = 0;
+    memset(&m_timePos, 0, sizeof(m_timePos));
+
+    initTimeWheel(steps, maxMin);
+}
+
 /*********************************************************
  * loop thread function
  * -------------------------------------------------------
@@ -114,7 +127,7 @@ void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin)
  * -------------------------------------------------------------
  * @return: no return
  **************************************************************/
-void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback)
+void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback, void *arg)
 {
     if (interval < m_steps || interval % m_steps != 0 || interval >= m_steps * m_firstLevelCount * m_secondLevelCount * m_thirdLevelCount)
     {
@@ -126,6 +139,7 @@ void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback)
     Event_t event = { 0 };
     event.interval = interval;
     event.cb = callback;
+    event.arg = arg;
 //set time start
     event.timePos.pos_min = m_timePos.pos_min;
     event.timePos.pos_sec = m_timePos.pos_sec;
@@ -210,7 +224,7 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
         if (event->interval == distanceMs)
         {
             //process event
-            event->cb();
+            event->cb(event->arg);
             //get now pos as this event's start point
             event->timePos = m_timePos;
             //add this event to slot

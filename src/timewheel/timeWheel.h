@@ -11,9 +11,11 @@ typedef struct TimePos {
         uint32_t pos_min;
 } TimePos_t;
 
+typedef void (*EventCallback_t)(void*);
+
 typedef struct Event {
         uint32_t id;
-        void (*cb)(void);
+        EventCallback_t cb;
         void *arg;
         TimePos_t timePos;
         uint32_t interval;
@@ -21,20 +23,20 @@ typedef struct Event {
 
 class TimeWheel;
 typedef std::shared_ptr<TimeWheel> TimeWheelPtr;
-typedef void (*EventCallback_t)(void);
+
 typedef std::vector<std::list<Event_t>> EventSlotList_t;
 
 class TimeWheel {
     public:
         TimeWheel();
+        TimeWheel(uint32_t steps, uint32_t maxMin);
 
         void initTimeWheel(uint32_t steps, uint32_t maxMin);
-        void createTimingEvent(uint32_t interval, EventCallback_t callback);
-
-    public:
-        static void* loopForInterval(void *arg);
+        void createTimingEvent(uint32_t interval, EventCallback_t callback, void *arg = NULL);
 
     private:
+        static void* loopForInterval(void *arg);
+
         uint32_t getCurrentMs(TimePos_t timePos);
         uint32_t createEventId(void);
         uint32_t processEvent(std::list<Event_t> &eventList);
