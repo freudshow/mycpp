@@ -2,19 +2,21 @@
 #include <list>
 #include <vector>
 #include <mutex>
+#include <pthread.h>
+#include <stdint.h>
 
 typedef struct TimePos {
-        int pos_ms;
-        int pos_sec;
-        int pos_min;
+        uint32_t pos_ms;
+        uint32_t pos_sec;
+        uint32_t pos_min;
 } TimePos_t;
 
 typedef struct Event {
-        int id;
+        uint32_t id;
         void (*cb)(void);
         void *arg;
         TimePos_t timePos;
-        int interval;
+        uint32_t interval;
 } Event_t;
 
 class TimeWheel;
@@ -26,28 +28,28 @@ class TimeWheel {
     public:
         TimeWheel();
 
-        void initTimeWheel(int steps, int maxMin);
-        void createTimingEvent(int interval, EventCallback_t callback);
+        void initTimeWheel(uint32_t steps, uint32_t maxMin);
+        void createTimingEvent(uint32_t interval, EventCallback_t callback);
 
     public:
         static void* loopForInterval(void *arg);
 
     private:
-        int getCurrentMs(TimePos_t timePos);
-        int createEventId(void);
-        int processEvent(std::list<Event_t> &eventList);
-        void getTriggerTimeFromInterval(int interval, TimePos_t &timePos);
-        void insertEventToSlot(int interval, Event_t &event);
+        uint32_t getCurrentMs(TimePos_t timePos);
+        uint32_t createEventId(void);
+        uint32_t processEvent(std::list<Event_t> &eventList);
+        void getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos);
+        void insertEventToSlot(uint32_t interval, Event_t &event);
 
         EventSlotList_t m_eventSlotList;
         TimePos_t m_timePos;
         pthread_t m_loopThread;
 
-        int m_firstLevelCount;
-        int m_secondLevelCount;
-        int m_thirdLevelCount;
+        uint32_t m_firstLevelCount;
+        uint32_t m_secondLevelCount;
+        uint32_t m_thirdLevelCount;
 
-        int m_steps;
-        int m_increaseId;  // not used
+        uint32_t m_steps;
+        uint32_t m_increaseId;  // not used
         std::mutex m_mutex;
 };

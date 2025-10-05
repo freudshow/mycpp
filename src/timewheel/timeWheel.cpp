@@ -83,7 +83,7 @@ void* TimeWheel::loopForInterval(void *arg)
  * -------------------------------------------------------------
  * @return: void* nullptr
  **************************************************************/
-void TimeWheel::initTimeWheel(int steps, int maxMin)
+void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin)
 {
     if (1000 % steps != 0)
     {
@@ -96,7 +96,7 @@ void TimeWheel::initTimeWheel(int steps, int maxMin)
     m_thirdLevelCount = maxMin;
 
     m_eventSlotList.resize(m_firstLevelCount + m_secondLevelCount + m_thirdLevelCount);
-    int ret = pthread_create(&m_loopThread, NULL, loopForInterval, this);
+    uint32_t ret = pthread_create(&m_loopThread, NULL, loopForInterval, this);
     if (ret != 0)
     {
         printf("create thread error:%s\n", strerror(errno));
@@ -114,7 +114,7 @@ void TimeWheel::initTimeWheel(int steps, int maxMin)
  * -------------------------------------------------------------
  * @return: no return
  **************************************************************/
-void TimeWheel::createTimingEvent(int interval, EventCallback_t callback)
+void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback)
 {
     if (interval < m_steps || interval % m_steps != 0 || interval >= m_steps * m_firstLevelCount * m_secondLevelCount * m_thirdLevelCount)
     {
@@ -144,7 +144,7 @@ void TimeWheel::createTimingEvent(int interval, EventCallback_t callback)
  * -------------------------------------------------------------
  * @return: a unique event id
  **************************************************************/
-int TimeWheel::createEventId(void)
+uint32_t TimeWheel::createEventId(void)
 {
     return m_increaseId++;
 }
@@ -157,14 +157,14 @@ int TimeWheel::createEventId(void)
  * -------------------------------------------------------------------------
  * @return: no return
  **************************************************************************/
-void TimeWheel::getTriggerTimeFromInterval(int interval, TimePos_t &timePos)
+void TimeWheel::getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos)
 {
 //get current time: ms
-    int curTime = getCurrentMs(m_timePos);
+    uint32_t curTime = getCurrentMs(m_timePos);
 // printf("interval = %d,current ms = %d\n", interval, curTime);
 
 //caculate which slot this interval should belong to
-    int futureTime = curTime + interval;
+    uint32_t futureTime = curTime + interval;
 // printf("future ms = %d\n", futureTime);
     timePos.pos_min = (futureTime / 1000 / 60) % m_thirdLevelCount;
     timePos.pos_sec = (futureTime % (1000 * 60)) / 1000;
@@ -180,7 +180,7 @@ void TimeWheel::getTriggerTimeFromInterval(int interval, TimePos_t &timePos)
  * -------------------------------------------------------------------------
  * @return: current ms
  **************************************************************************/
-int TimeWheel::getCurrentMs(TimePos_t timePos)
+uint32_t TimeWheel::getCurrentMs(TimePos_t timePos)
 {
     return m_steps * timePos.pos_ms + timePos.pos_sec * 1000 + timePos.pos_min * 60 * 1000;
 }
@@ -192,7 +192,7 @@ int TimeWheel::getCurrentMs(TimePos_t timePos)
  * -------------------------------------------------------------------------
  * @return: 0 - success, other - fail
  **************************************************************************/
-int TimeWheel::processEvent(std::list<Event_t> &eventList)
+uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
 {
 // printf("eventList.size=%d\n", eventList.size());
 
@@ -200,11 +200,11 @@ int TimeWheel::processEvent(std::list<Event_t> &eventList)
     for (auto event = eventList.begin(); event != eventList.end(); event++)
     {
         //caculate the current ms
-        int currentMs = getCurrentMs(m_timePos);
+        uint32_t currentMs = getCurrentMs(m_timePos);
         //caculate last  time(ms) this event was processed
-        int lastProcessedMs = getCurrentMs(event->timePos);
+        uint32_t lastProcessedMs = getCurrentMs(event->timePos);
         //caculate the distance between now and last time(ms)
-        int distanceMs = (currentMs - lastProcessedMs + (m_secondLevelCount + 1) * 60 * 1000) % ((m_secondLevelCount + 1) * 60 * 1000);
+        uint32_t distanceMs = (currentMs - lastProcessedMs + (m_secondLevelCount + 1) * 60 * 1000) % ((m_secondLevelCount + 1) * 60 * 1000);
 
         //if interval == distanceMs, need process this event
         if (event->interval == distanceMs)
@@ -236,7 +236,7 @@ int TimeWheel::processEvent(std::list<Event_t> &eventList)
  * -------------------------------------------------------------------------
  * @return: no return
  **************************************************************************/
-void TimeWheel::insertEventToSlot(int interval, Event_t &event)
+void TimeWheel::insertEventToSlot(uint32_t interval, Event_t &event)
 {
     printf("insertEventToSlot\n");
 
