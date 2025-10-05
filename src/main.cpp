@@ -18,7 +18,13 @@ using namespace std;
 
 #define SCHED_FREQUENCE       (100) //ms
 
-uint32_t g_funcArg[100] = { 0 };
+typedef struct eventArg {
+        uint32_t id;
+        uint32_t val;
+        uint32_t interval;
+} arg_t;
+
+arg_t g_funcArg[100] = { 0 };
 
 void get_local_time(char *buf, uint32_t bufLen)
 {
@@ -67,8 +73,8 @@ void funccc(void *arg)
         return;
     }
 
-    uint32_t *id = (uint32_t*) arg;
-    DEBUG_TIME_LINE("exec event: %u", *id);
+    arg_t *ev = (arg_t*) arg;
+    DEBUG_TIME_LINE("exec event[%u]: %u, interval: %u", ev->id, ev->val, ev->interval);
 }
 
 int main(int argc, char *argv[])
@@ -77,7 +83,9 @@ int main(int argc, char *argv[])
 
     for (uint32_t i = 0; i < ARRAY_SIZE(g_funcArg); i++)
     {
-        g_funcArg[i] = i;
+        g_funcArg[i].id = i;
+        g_funcArg[i].val = SCHED_FREQUENCE * (i + 1);
+        g_funcArg[i].interval = SCHED_FREQUENCE * (i + 1);
         wheel.createTimingEvent(SCHED_FREQUENCE * (i + 1), funccc, &g_funcArg[i]);
     }
 
