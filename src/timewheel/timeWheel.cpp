@@ -1,9 +1,57 @@
 #include "timeWheel.h"
-
+#include <sys/time.h>
 #include <iostream>
 #include <memory.h>
 #include <chrono>
 #include <thread>
+#include <stdarg.h>
+
+void get_local_time(char *buf, uint32_t bufLen)
+{
+    if (bufLen < 24)
+    {
+        return;
+    }
+
+    struct timeval systime;
+    struct tm timeinfo;
+
+    gettimeofday(&systime, NULL);
+    localtime_r(&systime.tv_sec, &timeinfo);
+    snprintf(buf, bufLen, "%04d-%02d-%02d %02d:%02d:%02d.%03ld",
+            (timeinfo.tm_year + 1900), timeinfo.tm_mon + 1,
+            timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min,
+            timeinfo.tm_sec, systime.tv_usec / 1000);
+}
+
+void debugBufFormat2fp(FILE *fp, const char *file, const char *func, int line, char *buf, int len, const char *fmt, ...)
+{
+    va_list ap;
+    char bufTime[32] = { 0 };
+
+    if (fp != NULL)
+    {
+        get_local_time(bufTime, sizeof(bufTime));
+        fprintf(fp, "[%s][%s][%s()][%d]: ", bufTime, basename((char*) file), func, line);
+        va_start(ap, fmt);
+        vfprintf(fp, fmt, ap);
+        va_end(ap);
+
+        if (buf != NULL && len > 0)
+        {
+            int i = 0;
+            for (i = 0; i < len; i++)
+            {
+                fprintf(fp, "%02X ", (uint8_t) buf[i]);
+            }
+        }
+
+        fprintf(fp, "\n");
+        fflush(fp);
+        if (fp != stdout && fp != stderr)
+            fclose(fp);
+    }
+}
 
 TimeWheel::TimeWheel()
 {
@@ -40,7 +88,7 @@ void* TimeWheel::loopForInterval(void *arg)
 {
     if (arg == NULL)
     {
-        printf("valid parameter\n");
+        DEBUG_TIME_LINE("valid parameter");
         return NULL;
     }
 
@@ -48,7 +96,7 @@ void* TimeWheel::loopForInterval(void *arg)
     while (1)
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(timeWheel->m_steps));
-        // printf("wake up\n");
+        // DEBUG_TIME_LINE("wake up");
         TimePos pos = { 0 };
         TimePos m_lastTimePos = timeWheel->m_timePos;
         //update slot of current TimeWheel
@@ -59,7 +107,7 @@ void* TimeWheel::loopForInterval(void *arg)
             // if minute changed, process in integral point (minute)
             if (pos.pos_min != m_lastTimePos.pos_min)
             {
-                // printf("minutes changed\n");
+                // DEBUG_TIME_LINE("minutes changed");
                 std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_timePos.pos_min + timeWheel->m_firstLevelCount + timeWheel->m_secondLevelCount];
                 timeWheel->processEvent(*eventList);
                 eventList->clear();
@@ -67,7 +115,7 @@ void* TimeWheel::loopForInterval(void *arg)
             else if (pos.pos_sec != m_lastTimePos.pos_sec)
             {
                 //in same minute, but second changed, now is in this integral second
-                // printf("second changed\n");
+                // DEBUG_TIME_LINE("second changed");
                 std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_timePos.pos_sec + timeWheel->m_firstLevelCount];
                 timeWheel->processEvent(*eventList);
                 eventList->clear();
@@ -75,12 +123,12 @@ void* TimeWheel::loopForInterval(void *arg)
             else if (pos.pos_ms != m_lastTimePos.pos_ms)
             {
                 //now in this ms
-                // printf("ms changed\n");
+                // DEBUG_TIME_LINE("ms changed");
                 std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_timePos.pos_ms];
                 timeWheel->processEvent(*eventList);
                 eventList->clear();
             }
-            // printf("loop over\n");
+            // DEBUG_TIME_LINE("loop over");
         }
     }
 
@@ -100,7 +148,7 @@ void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin)
 {
     if (1000 % steps != 0)
     {
-        printf("invalid steps\n");
+        DEBUG_TIME_LINE("invalid steps");
         return;
     }
 
@@ -112,7 +160,7 @@ void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin)
     uint32_t ret = pthread_create(&m_loopThread, NULL, loopForInterval, this);
     if (ret != 0)
     {
-        printf("create thread error:%s\n", strerror(errno));
+        DEBUG_TIME_LINE("create thread error:%s", strerror(errno));
         return;
     }
 // pthread_join(m_loopThread, NULL);
@@ -131,11 +179,11 @@ void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback, v
 {
     if (interval < m_steps || interval % m_steps != 0 || interval >= m_steps * m_firstLevelCount * m_secondLevelCount * m_thirdLevelCount)
     {
-        printf("invalid interval\n");
+        DEBUG_TIME_LINE("invalid interval");
         return;
     }
 
-    printf("start create event\n");
+    DEBUG_TIME_LINE("start create event");
     Event_t event = { 0 };
     event.interval = interval;
     event.cb = callback;
@@ -148,7 +196,7 @@ void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback, v
 // insert it to a slot of TimeWheel
     std::unique_lock<std::mutex> lock(m_mutex);
     insertEventToSlot(interval, event);
-    printf("create over\n");
+    DEBUG_TIME_LINE("create over");
 }
 
 /***************************************************************
@@ -175,16 +223,16 @@ void TimeWheel::getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos
 {
 //get current time: ms
     uint32_t curTime = getCurrentMs(m_timePos);
-// printf("interval = %d,current ms = %d\n", interval, curTime);
+// DEBUG_TIME_LINE("interval = %d,current ms = %d", interval, curTime);
 
 //caculate which slot this interval should belong to
     uint32_t futureTime = curTime + interval;
-// printf("future ms = %d\n", futureTime);
+// DEBUG_TIME_LINE("future ms = %d", futureTime);
     timePos.pos_min = (futureTime / 1000 / 60) % m_thirdLevelCount;
     timePos.pos_sec = (futureTime % (1000 * 60)) / 1000;
     timePos.pos_ms = (futureTime % 1000) / m_steps;
 
-// printf("next minPos=%d, secPos=%d, msPos=%d\n", timePos.pos_min, timePos.pos_sec, timePos.pos_ms);
+// DEBUG_TIME_LINE("next minPos=%d, secPos=%d, msPos=%d", timePos.pos_min, timePos.pos_sec, timePos.pos_ms);
 }
 
 /***************************************************************************
@@ -208,7 +256,7 @@ uint32_t TimeWheel::getCurrentMs(TimePos_t timePos)
  **************************************************************************/
 uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
 {
-// printf("eventList.size=%d\n", eventList.size());
+// DEBUG_TIME_LINE("eventList.size=%d", eventList.size());
 
 //process the event for current slot
     for (auto event = eventList.begin(); event != eventList.end(); event++)
@@ -233,7 +281,7 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
         else
         {
             //this condition will be trigger when process the integral point
-            printf("event->interval != distanceMs\n");
+            DEBUG_TIME_LINE("event->interval != distanceMs");
             // although this event in this positon, but it not arriving timing, it will continue move to next slot caculate by distance ms.
             insertEventToSlot(distanceMs, *event);
         }
@@ -252,34 +300,34 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
  **************************************************************************/
 void TimeWheel::insertEventToSlot(uint32_t interval, Event_t &event)
 {
-    printf("insertEventToSlot\n");
+    DEBUG_TIME_LINE("insertEventToSlot");
 
     TimePos_t timePos = { 0 };
 
 //caculate the which slot this event should be set to
     getTriggerTimeFromInterval(interval, timePos);
     {
-        // printf("timePos.pos_min=%d, m_timePos.pos_min=%d\n", timePos.pos_min, m_timePos.pos_min);
-        // printf("timePos.pos_sec=%d, m_timePos.pos_sec=%d\n", timePos.pos_sec, m_timePos.pos_sec);
-        // printf("timePos.pos_ms=%d, m_timePos.pos_ms=%d\n", timePos.pos_ms, m_timePos.pos_ms);
+        // DEBUG_TIME_LINE("timePos.pos_min=%d, m_timePos.pos_min=%d", timePos.pos_min, m_timePos.pos_min);
+        // DEBUG_TIME_LINE("timePos.pos_sec=%d, m_timePos.pos_sec=%d", timePos.pos_sec, m_timePos.pos_sec);
+        // DEBUG_TIME_LINE("timePos.pos_ms=%d, m_timePos.pos_ms=%d", timePos.pos_ms, m_timePos.pos_ms);
 
         // if minutes not equal to current minute, first insert it to it's minute slot
         if (timePos.pos_min != m_timePos.pos_min)
         {
-            printf("insert to %d minute\n", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
+            DEBUG_TIME_LINE("insert to %d minute", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
             m_eventSlotList[m_firstLevelCount + m_secondLevelCount + timePos.pos_min]
                     .push_back(event);
         }
         // if minutes is equal, but second changed, insert slot to this  integral point second
         else if (timePos.pos_sec != m_timePos.pos_sec)
         {
-            printf("insert to %d sec\n", m_firstLevelCount + timePos.pos_sec);
+            DEBUG_TIME_LINE("insert to %d sec", m_firstLevelCount + timePos.pos_sec);
             m_eventSlotList[m_firstLevelCount + timePos.pos_sec].push_back(event);
         }
         //if minute and second is equal, mean this event will not be trigger in integral point, set it to ms slot
         else if (timePos.pos_ms != m_timePos.pos_ms)
         {
-            printf("insert to %d ms\n", timePos.pos_ms);
+            DEBUG_TIME_LINE("insert to %d ms", timePos.pos_ms);
             m_eventSlotList[timePos.pos_ms].push_back(event);
         }
     }

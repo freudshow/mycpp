@@ -5,6 +5,12 @@
 #include <pthread.h>
 #include <stdint.h>
 
+#define FILE_LINE       __FILE__,__FUNCTION__,__LINE__
+#define DEBUG_BUFF_FORMAT(buf, bufSize, format, ...)    debugBufFormat2fp(stdout, FILE_LINE, (char*)buf, (int)bufSize, format, ##__VA_ARGS__)
+#define DEBUG_TIME_LINE(format, ...)    DEBUG_BUFF_FORMAT(NULL, 0, format, ##__VA_ARGS__)
+
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+
 typedef struct TimePos {
         uint32_t pos_ms;
         uint32_t pos_sec;
@@ -55,3 +61,15 @@ class TimeWheel {
         uint32_t m_increaseId;  // not used
         std::mutex m_mutex;
 };
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+    void debugBufFormat2fp(FILE *fp, const char *file, const char *func,
+            int line, char *buf, int len, const char *fmt, ...);
+
+#ifdef __cplusplus
+}
+#endif
+
