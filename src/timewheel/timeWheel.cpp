@@ -95,12 +95,12 @@ void* TimeWheel::loopForInterval(void *arg)
     TimeWheel *timeWheel = reinterpret_cast<TimeWheel*>(arg);
     while (1)
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(timeWheel->m_steps));
+        std::this_thread::sleep_for(std::chrono::milliseconds(timeWheel->m_steps)); //毫秒针走一格，推进时间轮
         // DEBUG_TIME_LINE("wake up");
         TimePos pos = { 0 };
-        TimePos m_lastTimePos = timeWheel->m_timePos;
+        TimePos m_lastTimePos = timeWheel->m_timePos;        //记住上一次推进时的时针位置
         //update slot of current TimeWheel
-        timeWheel->getTriggerTimeFromInterval(timeWheel->m_steps, pos);
+        timeWheel->getTriggerTimeFromInterval(timeWheel->m_steps, pos);        //获取当前的时针位置
         timeWheel->m_timePos = pos;
         {
             std::unique_lock<std::mutex> lock(timeWheel->m_mutex);
@@ -262,9 +262,10 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
     for (auto event = eventList.begin(); event != eventList.end(); event++)
     {
         //caculate the current ms
-        uint32_t currentMs = getCurrentMs(m_timePos);
+        uint32_t currentMs = getCurrentMs(m_timePos);                //当前时间轮对应的毫秒数
+        DEBUG_TIME_LINE("currentMs=%d", currentMs);
         //caculate last  time(ms) this event was processed
-        uint32_t lastProcessedMs = getCurrentMs(event->timePos);
+        uint32_t lastProcessedMs = getCurrentMs(event->timePos);                //上一次事件所在的槽位
         //caculate the distance between now and last time(ms)
         uint32_t distanceMs = (currentMs - lastProcessedMs + (m_secondLevelCount + 1) * 60 * 1000) % ((m_secondLevelCount + 1) * 60 * 1000);
 
