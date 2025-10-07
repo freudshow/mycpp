@@ -1,6 +1,5 @@
 #include <iostream>
 #include <unistd.h>
-#include <libgen.h>
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
@@ -31,10 +30,9 @@ void funccc(void *arg)
     DEBUG_TIME_LINE("exec event[%u]: %u, interval: %u", ev->id, ev->val, ev->interval);
 }
 
-int main(int argc, char *argv[])
+int mytestmain(int argc, char *argv[])
 {
-    TimeWheel wheel(SCHED_FREQUENCE, 10);
-
+    TimeWheel wheel(SCHED_FREQUENCE, 10, false);
     for (uint32_t i = 0; i < ARRAY_SIZE(g_funcArg); i++)
     {
         g_funcArg[i].id = i;
@@ -43,10 +41,7 @@ int main(int argc, char *argv[])
         wheel.createTimingEvent(SCHED_FREQUENCE * (i + 1), funccc, &g_funcArg[i]);
     }
 
-    while (1)
-    {
-        sleep(1);
-    }
+    wheel.run();
 
     return 0;
 }
