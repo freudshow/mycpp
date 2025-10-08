@@ -9,7 +9,7 @@
 #include <errno.h>
 #include <atomic>
 
-static std::atomic<bool> g_enable_debug { false };
+static std::atomic<bool> g_enable_debug{false};
 
 void get_local_time(char *buf, uint32_t bufLen)
 {
@@ -31,8 +31,7 @@ void get_local_time(char *buf, uint32_t bufLen)
 
 void debugBufFormat2fp(FILE *fp, const char *file, const char *func, int line, char *buf, int len, const char *fmt, ...)
 {
-    if (!g_enable_debug.load())
-        return;
+    if (!g_enable_debug.load()) return;
     va_list ap;
     char bufTime[32] = { 0 };
 
@@ -103,20 +102,14 @@ void* TimeWheel::loopForInterval(void *arg)
     TimeWheel *timeWheel = reinterpret_cast<TimeWheel*>(arg);
     while (!timeWheel->m_stopLoop.load())
     {
-        std::this_thread::sleep_for(std::chrono::milliseconds(timeWheel->m_steps)); //毫秒针走一格，推进时间轮
-        // DEBUG_TIME_LINE("wake up");
+        // Wait for either the timeout (m_steps) or a stop notification
+        std::unique_lock<std::mutex> lk(timeWheel->m_loopCvMutex);
+        timeWheel->m_loopCv.wait_for(lk, std::chrono::milliseconds(timeWheel->m_steps), [timeWheel]() { return timeWheel->m_stopLoop.load(); });
+
         TimePos pos = { 0 };
-        TimePos m_lastTimePos = timeWheel->m_timePos;        //记住上一次推进时的时针位置
-//=======
-//        // Wait for either the timeout (m_steps) or a stop notification
-//        std::unique_lock<std::mutex> lk(timeWheel->m_loopCvMutex);
-//        timeWheel->m_loopCv.wait_for(lk, std::chrono::milliseconds(timeWheel->m_steps), [timeWheel]() { return timeWheel->m_stopLoop.load(); });
-//
-//        TimePos pos = { 0 };
-//        timeWheel->m_lastTimePos = timeWheel->m_timePos;
-//>>>>>>> af3048bf52110d2a01dabb95bf344aa41a506519
+        timeWheel->m_lastTimePos = timeWheel->m_timePos;
         //update slot of current TimeWheel
-        timeWheel->getTriggerTimeFromInterval(timeWheel->m_steps, pos);        //获取当前的时针位置
+        timeWheel->getTriggerTimeFromInterval(timeWheel->m_steps, pos);
         timeWheel->m_timePos = pos;
 
         // Determine which slot to process and swap its list out under lock
@@ -172,8 +165,7 @@ void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin, bool runBackgroun
     }
 
     // record desired pool size
-    if (poolSize > 0)
-        m_desiredPoolSize.store(poolSize);
+    if (poolSize > 0) m_desiredPoolSize.store(poolSize);
 
     m_steps = steps;
     m_firstLevelCount = 1000 / steps;
@@ -183,8 +175,7 @@ void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin, bool runBackgroun
 
     // start a thread pool for dispatching callbacks. If a pool size was provided via m_desiredPoolSize, use it.
     size_t workers = m_desiredPoolSize.load();
-    if (workers == 0)
-        workers = std::max<size_t>(1, std::thread::hardware_concurrency());
+    if (workers == 0) workers = std::max<size_t>(1, std::thread::hardware_concurrency());
     startThreadPool(workers);
 
     if (runBackground)
@@ -299,12 +290,7 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
     // iterate through the provided list (these are popped from the main slots by caller)
     for (auto &event : eventList)
     {
-        //caculate the current ms
-        uint32_t currentMs = getCurrentMs(m_timePos);                //当前时间轮对应的毫秒数
-        DEBUG_TIME_LINE("currentMs=%d", currentMs);
-        //caculate last  time(ms) this event was processed
-        uint32_t lastProcessedMs = getCurrentMs(event.timePos);                //上一次事件所在的槽位
-        //caculate the distance between now and last time(ms)
+        uint32_t lastProcessedMs = getCurrentMs(event.timePos);
         uint32_t distanceMs = (currentMs - lastProcessedMs + (m_secondLevelCount + 1) * 60 * 1000) % ((m_secondLevelCount + 1) * 60 * 1000);
 
         if (event.interval == distanceMs)
@@ -315,20 +301,18 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
                 // move event into task that will call cb and re-insert after execution
                 Event_t evCopy = event;
                 TimePos_t evBase = basePos; // capture base position
-                enqueueTask([this, evCopy, evBase]() mutable
-                        {
-                            if (evCopy.cb) evCopy.cb(evCopy.arg);
-                            // reinsert the event after callback
-                        std::lock_guard<std::mutex> lg(this->m_mutex);
-                        evCopy.timePos = evBase;
-                        this->insertEventToSlot(evCopy.interval, evCopy);
-                    });
+                enqueueTask([this, evCopy, evBase]() mutable {
+                    if (evCopy.cb) evCopy.cb(evCopy.arg);
+                    // reinsert the event after callback
+                    std::lock_guard<std::mutex> lg(this->m_mutex);
+                    evCopy.timePos = evBase;
+                    this->insertEventToSlot(evCopy.interval, evCopy);
+                });
             }
             else
             {
                 // sequential: call directly then reinsert
-                if (event.cb)
-                    event.cb(event.arg);
+                if (event.cb) event.cb(event.arg);
                 reinjectImmediate.push_back(event);
                 // set its start point to basePos
                 reinjectImmediate.back().timePos = basePos;
@@ -417,11 +401,9 @@ void TimeWheel::run(void)
     {
         // Wait for either the timeout (m_steps) or a stop notification
         std::unique_lock<std::mutex> lk(m_loopCvMutex);
-        m_loopCv.wait_for(lk, std::chrono::milliseconds(m_steps), [this]()
-                {   return m_stopLoop.load();});
+        m_loopCv.wait_for(lk, std::chrono::milliseconds(m_steps), [this]() { return m_stopLoop.load(); });
 
-        if (m_stopLoop.load())
-            break;
+        if (m_stopLoop.load()) break;
 
         TimePos pos = { 0 };
         m_lastTimePos = m_timePos;
@@ -458,36 +440,30 @@ void TimeWheel::run(void)
 // ------------------ Thread pool implementation ------------------
 void TimeWheel::startThreadPool(size_t workerCount)
 {
-    if (workerCount == 0)
-        workerCount = 1;
+    if (workerCount == 0) workerCount = 1;
     m_poolSize = workerCount;
     m_stopThreadPool.store(false);
     for (size_t i = 0; i < workerCount; ++i)
     {
-        m_workers.emplace_back([this]()
+        m_workers.emplace_back([this]() {
+            while (true)
+            {
+                std::function<void()> task;
                 {
-                    while (true)
-                    {
-                        std::function<void()> task;
-                        {
-                            std::unique_lock<std::mutex> lk(this->m_taskMutex);
-                            this->m_taskCv.wait(lk, [this]()
-                                    {   return this->m_stopThreadPool.load() || !this->m_taskQueue.empty();});
-                            if (this->m_stopThreadPool.load() && this->m_taskQueue.empty())
-                            return;
-                            task = std::move(this->m_taskQueue.front());
-                            this->m_taskQueue.pop();
-                        }
-                        try
-                        {
-                            if (task) task();
-                        }
-                        catch (...)
-                        {
-                            DEBUG_TIME_LINE("exception in task");
-                        }
-                    }
-                });
+                    std::unique_lock<std::mutex> lk(this->m_taskMutex);
+                    this->m_taskCv.wait(lk, [this]() { return this->m_stopThreadPool.load() || !this->m_taskQueue.empty(); });
+                    if (this->m_stopThreadPool.load() && this->m_taskQueue.empty())
+                        return;
+                    task = std::move(this->m_taskQueue.front());
+                    this->m_taskQueue.pop();
+                }
+                try {
+                    if (task) task();
+                } catch (...) {
+                    DEBUG_TIME_LINE("exception in task");
+                }
+            }
+        });
     }
 }
 
@@ -497,14 +473,12 @@ void TimeWheel::stopThreadPool()
     m_taskCv.notify_all();
     for (auto &t : m_workers)
     {
-        if (t.joinable())
-            t.join();
+        if (t.joinable()) t.join();
     }
     m_workers.clear();
     // clear remaining tasks
     std::lock_guard<std::mutex> lg(m_taskMutex);
-    while (!m_taskQueue.empty())
-        m_taskQueue.pop();
+    while (!m_taskQueue.empty()) m_taskQueue.pop();
 }
 
 void TimeWheel::enqueueTask(std::function<void()> task)

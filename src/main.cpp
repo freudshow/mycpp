@@ -30,7 +30,7 @@ void funccc(void *arg)
     DEBUG_TIME_LINE("exec event[%u]: %u, interval: %u", ev->id, ev->val, ev->interval);
 }
 
-int mytestmain(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     TimeWheel wheel(SCHED_FREQUENCE, 10, false);
     for (uint32_t i = 0; i < ARRAY_SIZE(g_funcArg); i++)
