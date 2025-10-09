@@ -8,7 +8,8 @@
 
 static void get_local_time_buf(char *buf, size_t blen)
 {
-    if (blen < 24) return;
+    if (blen < 24)
+        return;
     struct timespec ts;
     struct tm tmv;
     clock_gettime(CLOCK_REALTIME, &ts);
@@ -20,7 +21,7 @@ static void get_local_time_buf(char *buf, size_t blen)
 
 void debug_time_line(const char *fmt, ...)
 {
-    char timebuf[32] = {0};
+    char timebuf[32] = { 0 };
     get_local_time_buf(timebuf, sizeof(timebuf));
     fprintf(stdout, "[%s][timewheel_c.c][]: ", timebuf);
     va_list ap;
@@ -47,24 +48,27 @@ static void get_trigger_time_from_interval(TimeWheel *tw, uint32_t interval, Tim
 
 static void insert_event_to_slot(TimeWheel *tw, uint32_t interval, Event_t *event, TimePos_t base)
 {
-    TimePos_t timePos = {0};
+    TimePos_t timePos = { 0 };
     get_trigger_time_from_interval(tw, interval, &timePos, base);
 
     if (timePos.pos_min != base.pos_min)
     {
         uint32_t idx = tw->firstLevelCount + tw->secondLevelCount + timePos.pos_min;
+        debug_time_line("insert event[%u] interval=%u -> pos(min=%u,sec=%u,ms=%u) into min slot idx=%u", event->id, interval, timePos.pos_min, timePos.pos_sec, timePos.pos_ms, idx);
         event->next = tw->slotList[idx];
         tw->slotList[idx] = event;
     }
     else if (timePos.pos_sec != base.pos_sec)
     {
         uint32_t idx = tw->firstLevelCount + timePos.pos_sec;
+        debug_time_line("insert event[%u] interval=%u -> pos(min=%u,sec=%u,ms=%u) into sec slot idx=%u", event->id, interval, timePos.pos_min, timePos.pos_sec, timePos.pos_ms, idx);
         event->next = tw->slotList[idx];
         tw->slotList[idx] = event;
     }
     else if (timePos.pos_ms != base.pos_ms)
     {
         uint32_t idx = timePos.pos_ms;
+        debug_time_line("insert event[%u] interval=%u -> pos(min=%u,sec=%u,ms=%u) into ms slot idx=%u", event->id, interval, timePos.pos_min, timePos.pos_sec, timePos.pos_ms, idx);
         event->next = tw->slotList[idx];
         tw->slotList[idx] = event;
     }
@@ -117,12 +121,13 @@ static inline void timespec_add_us(struct timespec *t, long us)
     }
 }
 
-static void *loop_thread_fn(void *arg)
+static void* loop_thread_fn(void *arg)
 {
     TimeWheel *tw = (TimeWheel*) arg;
-    if (!tw) return NULL;
+    if (!tw)
+        return NULL;
 
-    const long step_us = (long)tw->steps * 1000L;
+    const long step_us = (long) tw->steps * 1000L;
     struct timespec start;
     clock_gettime(CLOCK_MONOTONIC, &start);
     uint64_t processedTicks = 0;
@@ -132,15 +137,17 @@ static void *loop_thread_fn(void *arg)
         // compute next tick target
         struct timespec target = start;
         uint64_t nextTick = processedTicks + 1;
-        long addUs = (long)(nextTick * step_us);
+        long addUs = (long) (nextTick * step_us);
         timespec_add_us(&target, addUs);
         // sleep until target
         // Sleep until target using nanosleep; compute remaining time loop to handle interrupts
-        while (tw->running) {
+        while (tw->running)
+        {
             struct timespec now2;
             clock_gettime(CLOCK_MONOTONIC, &now2);
             long rem_us = (target.tv_sec - now2.tv_sec) * 1000000L + (target.tv_nsec - now2.tv_nsec) / 1000L;
-            if (rem_us <= 0) break;
+            if (rem_us <= 0)
+                break;
             struct timespec req;
             req.tv_sec = rem_us / 1000000L;
             req.tv_nsec = (rem_us % 1000000L) * 1000L;
@@ -150,18 +157,21 @@ static void *loop_thread_fn(void *arg)
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
         long elapsed_us = (now.tv_sec - start.tv_sec) * 1000000L + (now.tv_nsec - start.tv_nsec) / 1000L;
-        if (elapsed_us < 0) continue;
-        uint64_t ticksSinceStart = (uint64_t)(elapsed_us / step_us);
-        if (ticksSinceStart < processedTicks + 1) continue;
-        uint32_t totalPassed = (uint32_t)(ticksSinceStart - processedTicks);
-        if (totalPassed == 0) continue;
+        if (elapsed_us < 0)
+            continue;
+        uint64_t ticksSinceStart = (uint64_t) (elapsed_us / step_us);
+        if (ticksSinceStart < processedTicks + 1)
+            continue;
+        uint32_t totalPassed = (uint32_t) (ticksSinceStart - processedTicks);
+        if (totalPassed == 0)
+            continue;
 
         // process each intermediate tick
         TimePos_t prevPos = tw->timePos;
         uint32_t baseMs = get_current_ms(prevPos, tw->steps);
         for (uint32_t i = 1; i <= totalPassed; ++i)
         {
-            TimePos_t pos = {0};
+            TimePos_t pos = { 0 };
             uint32_t futureMs = baseMs + i * tw->steps;
             pos.pos_min = (futureMs / 1000 / 60) % tw->thirdLevelCount;
             pos.pos_sec = (futureMs % (1000 * 60)) / 1000;
@@ -188,7 +198,10 @@ static void *loop_thread_fn(void *arg)
             prevPos = pos;
         }
 
+        // update global timePos under mutex to keep readers (creators) consistent
+        pthread_mutex_lock(&tw->mutex);
         tw->timePos = prevPos;
+        pthread_mutex_unlock(&tw->mutex);
         processedTicks += totalPassed;
     }
 
@@ -197,8 +210,13 @@ static void *loop_thread_fn(void *arg)
 
 void timewheel_init(TimeWheel *tw, uint32_t steps, uint32_t maxMin)
 {
-    if (!tw) return;
-    if (1000 % steps != 0) { debug_time_line("invalid steps"); return; }
+    if (!tw)
+        return;
+    if (1000 % steps != 0)
+    {
+        debug_time_line("invalid steps");
+        return;
+    }
     tw->steps = steps;
     tw->firstLevelCount = 1000 / steps;
     tw->secondLevelCount = 60;
@@ -220,7 +238,8 @@ void timewheel_init(TimeWheel *tw, uint32_t steps, uint32_t maxMin)
 
 void timewheel_create_timing_event(TimeWheel *tw, uint32_t interval, EventCallback_t cb, void *arg)
 {
-    if (!tw) return;
+    if (!tw)
+        return;
     if (interval < tw->steps || interval % tw->steps != 0 || interval >= tw->steps * tw->firstLevelCount * tw->secondLevelCount * tw->thirdLevelCount)
     {
         debug_time_line("invalid interval");
@@ -232,11 +251,11 @@ void timewheel_create_timing_event(TimeWheel *tw, uint32_t interval, EventCallba
     ev->interval = interval;
     ev->cb = cb;
     ev->arg = arg;
+    debug_time_line("create_event: ev=%p, interval=%u", ev, interval);
+    // Assign id and insert using a consistent timePos snapshot under the mutex to avoid races
+    pthread_mutex_lock(&tw->mutex);
     ev->timePos = tw->timePos;
     ev->id = tw->increaseId++;
-
-    pthread_mutex_lock(&tw->mutex);
     insert_event_to_slot(tw, interval, ev, tw->timePos);
     pthread_mutex_unlock(&tw->mutex);
 }
-
