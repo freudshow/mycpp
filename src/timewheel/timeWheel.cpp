@@ -91,54 +91,82 @@ void* TimeWheel::loopForInterval(void *arg)
     }
 
     TimeWheel *timeWheel = reinterpret_cast<TimeWheel*>(arg);
+    // Use a steady clock to avoid drift caused by sleep inaccuracies.
+    using steady_clock = std::chrono::steady_clock;
+    auto lastTime = steady_clock::now();
+
     while (1)
     {
+        // Wait until at least one step has elapsed (sleeping reduces busy spin)
         std::this_thread::sleep_for(std::chrono::milliseconds(timeWheel->m_steps));
-        // DEBUG_TIME_LINE("wake up");
-        TimePos pos = { 0 };
-        TimePos m_lastTimePos = timeWheel->m_timePos;
-        //update slot of current TimeWheel
-        timeWheel->getTriggerTimeFromInterval(timeWheel->m_steps, pos);
-        timeWheel->m_timePos = pos;
 
+        // Measure elapsed since last processed time
+        auto now = steady_clock::now();
+        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTime).count();
+
+        if (elapsedMs <= 0)
         {
-            std::unique_lock<std::mutex> lock(timeWheel->m_mutex);
-            // if minute changed, process in integral point (minute)
-            if (pos.pos_min != m_lastTimePos.pos_min)
-            {
-                // DEBUG_TIME_LINE("minutes changed");
-                std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[
-                        timeWheel->m_timePos.pos_min +
-                                timeWheel->m_firstLevelCount +
-                                timeWheel->m_secondLevelCount
-                        ];
-                timeWheel->processEvent(*eventList);
-                eventList->clear();
-            }
-            else if (pos.pos_sec != m_lastTimePos.pos_sec)
-            {
-                //in same minute, but second changed, now is in this integral second
-                // DEBUG_TIME_LINE("second changed");
-                std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_timePos.pos_sec + timeWheel->m_firstLevelCount];
-                timeWheel->processEvent(*eventList);
-                eventList->clear();
-            }
-            else if (pos.pos_ms != m_lastTimePos.pos_ms)
-            {
-                //now in this ms
-                // DEBUG_TIME_LINE("ms changed");
-                std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_timePos.pos_ms];
-                timeWheel->processEvent(*eventList);
-                eventList->clear();
-            }
-            // DEBUG_TIME_LINE("loop over");
+            continue;
         }
+
+        // Compute how many steps actually passed (may be >1 if we were late)
+        uint32_t totalPassed = 0;
+        if (timeWheel->m_steps > 0)
+            totalPassed = static_cast<uint32_t>(elapsedMs / timeWheel->m_steps);
+
+        if (totalPassed == 0)
+        {
+            // Not enough time for one step; loop again
+            continue;
+        }
+
+        // Process each intermediate step so no slots are skipped
+        TimePos prevPos = timeWheel->m_timePos;
+        uint32_t baseMs = timeWheel->getCurrentMs(prevPos);
+
+        for (uint32_t i = 1; i <= totalPassed; ++i)
+        {
+            TimePos pos = { 0 };
+            uint32_t futureMs = baseMs + i * timeWheel->m_steps;
+
+            pos.pos_min = (futureMs / 1000 / 60) % timeWheel->m_thirdLevelCount;
+            pos.pos_sec = (futureMs % (1000 * 60)) / 1000;
+            pos.pos_ms = (futureMs % 1000) / timeWheel->m_steps;
+
+            {
+                std::unique_lock<std::mutex> lock(timeWheel->m_mutex);
+                if (pos.pos_min != prevPos.pos_min)
+                {
+                    std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_firstLevelCount + timeWheel->m_secondLevelCount + pos.pos_min];
+                    timeWheel->processEvent(*eventList);
+                    eventList->clear();
+                }
+                else if (pos.pos_sec != prevPos.pos_sec)
+                {
+                    std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_firstLevelCount + pos.pos_sec];
+                    timeWheel->processEvent(*eventList);
+                    eventList->clear();
+                }
+                else if (pos.pos_ms != prevPos.pos_ms)
+                {
+                    std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[pos.pos_ms];
+                    timeWheel->processEvent(*eventList);
+                    eventList->clear();
+                }
+            }
+
+            prevPos = pos;
+        }
+
+        // update wheel position and lastTime
+        timeWheel->m_timePos = prevPos;
+        lastTime += std::chrono::milliseconds(static_cast<int64_t>(totalPassed) * timeWheel->m_steps);
     }
 
     return nullptr;
 }
 
-/***************************************************************
+/***********************************************************************
  * init TimeWheel's step and maxmin,
  * which detemine the max period of this wheel
  * -------------------------------------------------------------
@@ -146,7 +174,7 @@ void* TimeWheel::loopForInterval(void *arg)
  * @param[in] maxMin - max minutes this wheel can support
  * -------------------------------------------------------------
  * @return: void* nullptr
- **************************************************************/
+ **********************************************************************/
 void TimeWheel::initTimeWheel(uint32_t steps, uint32_t maxMin)
 {
     if (1000 % steps != 0)
