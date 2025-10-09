@@ -1,9 +1,9 @@
-#include "timewheel_c.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <timewheel.h>
 #include <unistd.h>
 
 static void get_local_time_buf(char *buf, size_t blen)

@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
-#include "timewheel_c.h"
 #include <string.h>
+#include <timewheel.h>
 
 #define SCHED_FREQUENCE (100)
 
