@@ -57,7 +57,6 @@ TimeWheel::TimeWheel()
 {
     m_steps = 0;
     m_firstLevelCount = 0;
-    m_secondLevelCount = 60;
     m_thirdLevelCount = 0;
     m_increaseId = 0;
     m_loopThread = 0;
@@ -68,7 +67,6 @@ TimeWheel::TimeWheel(uint32_t steps, uint32_t maxMin)
 {
     m_steps = 0;
     m_firstLevelCount = 0;
-    m_secondLevelCount = 60;
     m_thirdLevelCount = 0;
     m_increaseId = 0;
     m_loopThread = 0;
@@ -102,13 +100,18 @@ void* TimeWheel::loopForInterval(void *arg)
         //update slot of current TimeWheel
         timeWheel->getTriggerTimeFromInterval(timeWheel->m_steps, pos);
         timeWheel->m_timePos = pos;
+
         {
             std::unique_lock<std::mutex> lock(timeWheel->m_mutex);
             // if minute changed, process in integral point (minute)
             if (pos.pos_min != m_lastTimePos.pos_min)
             {
                 // DEBUG_TIME_LINE("minutes changed");
-                std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_timePos.pos_min + timeWheel->m_firstLevelCount + timeWheel->m_secondLevelCount];
+                std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[
+                        timeWheel->m_timePos.pos_min +
+                                timeWheel->m_firstLevelCount +
+                                timeWheel->m_secondLevelCount
+                        ];
                 timeWheel->processEvent(*eventList);
                 eventList->clear();
             }
@@ -183,7 +186,6 @@ void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback, v
         return;
     }
 
-    DEBUG_TIME_LINE("start create event");
     Event_t event = { 0 };
     event.interval = interval;
     event.cb = callback;
@@ -193,6 +195,9 @@ void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback, v
     event.timePos.pos_sec = m_timePos.pos_sec;
     event.timePos.pos_ms = m_timePos.pos_ms;
     event.id = createEventId();
+
+    arg_t *pArg = (arg_t*) arg;
+    DEBUG_TIME_LINE("created event: id=%u, interval=%d, value=%u", pArg->id, pArg->interval, pArg->val);
 // insert it to a slot of TimeWheel
     std::unique_lock<std::mutex> lock(m_mutex);
     insertEventToSlot(interval, event);
@@ -228,9 +233,9 @@ void TimeWheel::getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos
 //caculate which slot this interval should belong to
     uint32_t futureTime = curTime + interval;
 // DEBUG_TIME_LINE("future ms = %d", futureTime);
-    timePos.pos_min = (futureTime / 1000 / 60) % m_thirdLevelCount;
-    timePos.pos_sec = (futureTime % (1000 * 60)) / 1000;
-    timePos.pos_ms = (futureTime % 1000) / m_steps;
+    timePos.pos_min = (futureTime / 1000 / 60) % m_thirdLevelCount; //get minute slot
+    timePos.pos_sec = (futureTime % (1000 * 60)) / 1000; //get second slot
+    timePos.pos_ms = (futureTime % 1000) / m_steps; //get millisecond slot
 
 // DEBUG_TIME_LINE("next minPos=%d, secPos=%d, msPos=%d", timePos.pos_min, timePos.pos_sec, timePos.pos_ms);
 }
@@ -265,8 +270,10 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
         uint32_t currentMs = getCurrentMs(m_timePos);
         //caculate last  time(ms) this event was processed
         uint32_t lastProcessedMs = getCurrentMs(event->timePos);
+
         //caculate the distance between now and last time(ms)
-        uint32_t distanceMs = (currentMs - lastProcessedMs + (m_secondLevelCount + 1) * 60 * 1000) % ((m_secondLevelCount + 1) * 60 * 1000);
+        uint32_t period = (m_secondLevelCount + 1) * 60 * 1000;
+        uint32_t distanceMs = (currentMs + period - lastProcessedMs) % period;
 
         //if interval == distanceMs, need process this event
         if (event->interval == distanceMs)
@@ -281,9 +288,20 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
         else
         {
             //this condition will be trigger when process the integral point
-            DEBUG_TIME_LINE("event->interval != distanceMs");
+            DEBUG_TIME_LINE("id: %u, interval: %u, distanceMs: %u, event->interval != distanceMs",
+                    event->id, event->interval, distanceMs);
             // although this event in this positon, but it not arriving timing, it will continue move to next slot caculate by distance ms.
-            insertEventToSlot(distanceMs, *event);
+            uint32_t remaining;
+            if (event->interval > distanceMs)
+            {
+                remaining = event->interval - distanceMs;
+            }
+            else
+            {
+                remaining = event->interval + period - distanceMs;
+            }
+
+            insertEventToSlot(remaining, *event);
         }
     }
 
@@ -304,30 +322,31 @@ void TimeWheel::insertEventToSlot(uint32_t interval, Event_t &event)
 
     TimePos_t timePos = { 0 };
 
-//caculate the which slot this event should be set to
+    //caculate the which slot this event should be set to
     getTriggerTimeFromInterval(interval, timePos);
+
     {
-        // DEBUG_TIME_LINE("timePos.pos_min=%d, m_timePos.pos_min=%d", timePos.pos_min, m_timePos.pos_min);
-        // DEBUG_TIME_LINE("timePos.pos_sec=%d, m_timePos.pos_sec=%d", timePos.pos_sec, m_timePos.pos_sec);
-        // DEBUG_TIME_LINE("timePos.pos_ms=%d, m_timePos.pos_ms=%d", timePos.pos_ms, m_timePos.pos_ms);
+        DEBUG_TIME_LINE("timePos.pos_min=%d, m_timePos.pos_min=%d", timePos.pos_min, m_timePos.pos_min);
+        DEBUG_TIME_LINE("timePos.pos_sec=%d, m_timePos.pos_sec=%d", timePos.pos_sec, m_timePos.pos_sec);
+        DEBUG_TIME_LINE("timePos.pos_ms=%d, m_timePos.pos_ms=%d", timePos.pos_ms, m_timePos.pos_ms);
 
         // if minutes not equal to current minute, first insert it to it's minute slot
         if (timePos.pos_min != m_timePos.pos_min)
         {
-            DEBUG_TIME_LINE("insert to %d minute", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
+            DEBUG_TIME_LINE("insert to %d minute slot", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
             m_eventSlotList[m_firstLevelCount + m_secondLevelCount + timePos.pos_min]
                     .push_back(event);
         }
         // if minutes is equal, but second changed, insert slot to this  integral point second
         else if (timePos.pos_sec != m_timePos.pos_sec)
         {
-            DEBUG_TIME_LINE("insert to %d sec", m_firstLevelCount + timePos.pos_sec);
+            DEBUG_TIME_LINE("insert to %d second slot", m_firstLevelCount + timePos.pos_sec);
             m_eventSlotList[m_firstLevelCount + timePos.pos_sec].push_back(event);
         }
         //if minute and second is equal, mean this event will not be trigger in integral point, set it to ms slot
         else if (timePos.pos_ms != m_timePos.pos_ms)
         {
-            DEBUG_TIME_LINE("insert to %d ms", timePos.pos_ms);
+            DEBUG_TIME_LINE("insert to %d milliSecond slot", timePos.pos_ms);
             m_eventSlotList[timePos.pos_ms].push_back(event);
         }
     }

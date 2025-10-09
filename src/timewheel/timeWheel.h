@@ -19,6 +19,12 @@ typedef struct TimePos {
 
 typedef void (*EventCallback_t)(void*);
 
+typedef struct eventArg {
+        uint32_t id;
+        uint32_t val;
+        uint32_t interval;
+} arg_t;
+
 typedef struct Event {
         uint32_t id;
         EventCallback_t cb;
@@ -49,17 +55,17 @@ class TimeWheel {
         void getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos);
         void insertEventToSlot(uint32_t interval, Event_t &event);
 
-        EventSlotList_t m_eventSlotList;
-        TimePos_t m_timePos;
-        pthread_t m_loopThread;
+        EventSlotList_t m_eventSlotList;        // event slot list
+        TimePos_t m_timePos;                    // current time position of wheel
+        pthread_t m_loopThread;                 // thread for loop
 
-        uint32_t m_firstLevelCount;
-        uint32_t m_secondLevelCount;
-        uint32_t m_thirdLevelCount;
+        uint32_t m_firstLevelCount;             // millisecond level
+        const uint32_t m_secondLevelCount = 60; // second level, 1 minute equals to 60 seconds, so this value is 60
+        uint32_t m_thirdLevelCount;             // minute level
 
-        uint32_t m_steps;
-        uint32_t m_increaseId;  // not used
-        std::mutex m_mutex;
+        uint32_t m_steps;                       // steps of ms, accuracy of time wheel
+        uint32_t m_increaseId;                  // event id increase number
+        std::mutex m_mutex;                     // mutex for event slot list
 };
 
 #ifdef __cplusplus

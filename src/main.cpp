@@ -11,13 +11,7 @@ using namespace std;
 
 #define SCHED_FREQUENCE       (100) //ms
 
-typedef struct eventArg {
-        uint32_t id;
-        uint32_t val;
-        uint32_t interval;
-} arg_t;
-
-arg_t g_funcArg[100] = { 0 };
+arg_t g_funcArg[7] = { 0 };
 
 void funccc(void *arg)
 {
@@ -28,7 +22,7 @@ void funccc(void *arg)
     }
 
     arg_t *ev = (arg_t*) arg;
-    DEBUG_TIME_LINE("exec event[%u]: %u, interval: %u", ev->id, ev->val, ev->interval);
+    DEBUG_TIME_LINE("exec event[%u]: value-%u, interval: %u", ev->id, ev->val, ev->interval);
 }
 
 int main(int argc, char *argv[])
