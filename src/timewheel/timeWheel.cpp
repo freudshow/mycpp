@@ -91,32 +91,41 @@ void* TimeWheel::loopForInterval(void *arg)
     }
 
     TimeWheel *timeWheel = reinterpret_cast<TimeWheel*>(arg);
-    // Use a steady clock to avoid drift caused by sleep inaccuracies.
+    // Use a steady clock and sleep_until to minimize accumulated drift.
+
     using steady_clock = std::chrono::steady_clock;
-    auto lastTime = steady_clock::now();
+
+    // Anchor start time and tick index. We compute ticks deterministically from startTime
+    // instead of incrementally adjusting lastTime to avoid accumulation of rounding errors.
+    auto startTime = steady_clock::now();
+    const int64_t stepUs = static_cast<int64_t>(timeWheel->m_steps) * 1000; // microsecond step
+    uint64_t processedTicks = 0;
 
     while (1)
     {
-        // Wait until at least one step has elapsed (sleeping reduces busy spin)
-        std::this_thread::sleep_for(std::chrono::milliseconds(timeWheel->m_steps));
+        // Compute next tick time based on anchor and processedTicks
+        auto nextTickTime = startTime + std::chrono::microseconds(static_cast<int64_t>((processedTicks + 1) * stepUs));
+        std::this_thread::sleep_until(nextTickTime);
 
-        // Measure elapsed since last processed time
         auto now = steady_clock::now();
-        auto elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastTime).count();
 
-        if (elapsedMs <= 0)
+        // compute how many ticks have elapsed since start
+        auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(now - startTime).count();
+        if (elapsedUs < 0)
         {
             continue;
         }
 
-        // Compute how many steps actually passed (may be >1 if we were late)
-        uint32_t totalPassed = 0;
-        if (timeWheel->m_steps > 0)
-            totalPassed = static_cast<uint32_t>(elapsedMs / timeWheel->m_steps);
+        uint64_t ticksSinceStart = static_cast<uint64_t>(elapsedUs / stepUs);
+        if (ticksSinceStart < processedTicks + 1)
+        {
+            // nothing new to process
+            continue;
+        }
 
+        uint32_t totalPassed = static_cast<uint32_t>(ticksSinceStart - processedTicks);
         if (totalPassed == 0)
         {
-            // Not enough time for one step; loop again
             continue;
         }
 
@@ -138,19 +147,19 @@ void* TimeWheel::loopForInterval(void *arg)
                 if (pos.pos_min != prevPos.pos_min)
                 {
                     std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_firstLevelCount + timeWheel->m_secondLevelCount + pos.pos_min];
-                    timeWheel->processEvent(*eventList);
+                    timeWheel->processEvent(*eventList, pos);
                     eventList->clear();
                 }
                 else if (pos.pos_sec != prevPos.pos_sec)
                 {
                     std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[timeWheel->m_firstLevelCount + pos.pos_sec];
-                    timeWheel->processEvent(*eventList);
+                    timeWheel->processEvent(*eventList, pos);
                     eventList->clear();
                 }
                 else if (pos.pos_ms != prevPos.pos_ms)
                 {
                     std::list<Event_t> *eventList = &timeWheel->m_eventSlotList[pos.pos_ms];
-                    timeWheel->processEvent(*eventList);
+                    timeWheel->processEvent(*eventList, pos);
                     eventList->clear();
                 }
             }
@@ -158,9 +167,9 @@ void* TimeWheel::loopForInterval(void *arg)
             prevPos = pos;
         }
 
-        // update wheel position and lastTime
+        // update wheel position and mark how many ticks we've processed
         timeWheel->m_timePos = prevPos;
-        lastTime += std::chrono::milliseconds(static_cast<int64_t>(totalPassed) * timeWheel->m_steps);
+        processedTicks += totalPassed;
     }
 
     return nullptr;
@@ -228,7 +237,7 @@ void TimeWheel::createTimingEvent(uint32_t interval, EventCallback_t callback, v
     DEBUG_TIME_LINE("created event: id=%u, interval=%d, value=%u", pArg->id, pArg->interval, pArg->val);
 // insert it to a slot of TimeWheel
     std::unique_lock<std::mutex> lock(m_mutex);
-    insertEventToSlot(interval, event);
+    insertEventToSlot(interval, event, m_timePos);
     DEBUG_TIME_LINE("create over");
 }
 
@@ -252,10 +261,10 @@ uint32_t TimeWheel::createEventId(void)
  * -------------------------------------------------------------------------
  * @return: no return
  **************************************************************************/
-void TimeWheel::getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos)
+void TimeWheel::getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos, TimePos_t basePos)
 {
 //get current time: ms
-    uint32_t curTime = getCurrentMs(m_timePos);
+    uint32_t curTime = getCurrentMs(basePos);
 // DEBUG_TIME_LINE("interval = %d,current ms = %d", interval, curTime);
 
 //caculate which slot this interval should belong to
@@ -287,7 +296,7 @@ uint32_t TimeWheel::getCurrentMs(TimePos_t timePos)
  * -------------------------------------------------------------------------
  * @return: 0 - success, other - fail
  **************************************************************************/
-uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
+uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList, TimePos_t currentPos)
 {
 // DEBUG_TIME_LINE("eventList.size=%d", eventList.size());
 
@@ -295,12 +304,15 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
     for (auto event = eventList.begin(); event != eventList.end(); event++)
     {
         //caculate the current ms
-        uint32_t currentMs = getCurrentMs(m_timePos);
+    uint32_t currentMs = getCurrentMs(currentPos);
         //caculate last  time(ms) this event was processed
         uint32_t lastProcessedMs = getCurrentMs(event->timePos);
 
-        //caculate the distance between now and last time(ms)
-        uint32_t period = (m_secondLevelCount + 1) * 60 * 1000;
+    //caculate the distance between now and last time(ms)
+    // The total period the wheel covers is (minutes_in_third_level * 60 * 1000)
+    // Previously this used (m_secondLevelCount + 1) which was incorrect and
+    // could cause distance calculations to be off (preventing events from firing).
+    uint32_t period = m_thirdLevelCount * 60 * 1000;
         uint32_t distanceMs = (currentMs + period - lastProcessedMs) % period;
 
         //if interval == distanceMs, need process this event
@@ -309,9 +321,9 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
             //process event
             event->cb(event->arg);
             //get now pos as this event's start point
-            event->timePos = m_timePos;
+            event->timePos = currentPos;
             //add this event to slot
-            insertEventToSlot(event->interval, *event);
+            insertEventToSlot(event->interval, *event, currentPos);
         }
         else
         {
@@ -329,7 +341,7 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
                 remaining = event->interval + period - distanceMs;
             }
 
-            insertEventToSlot(remaining, *event);
+            insertEventToSlot(remaining, *event, currentPos);
         }
     }
 
@@ -344,35 +356,35 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList)
  * -------------------------------------------------------------------------
  * @return: no return
  **************************************************************************/
-void TimeWheel::insertEventToSlot(uint32_t interval, Event_t &event)
+void TimeWheel::insertEventToSlot(uint32_t interval, Event_t &event, TimePos_t basePos)
 {
     DEBUG_TIME_LINE("insertEventToSlot");
 
     TimePos_t timePos = { 0 };
 
-    //caculate the which slot this event should be set to
-    getTriggerTimeFromInterval(interval, timePos);
+    //caculate the which slot this event should be set to (based on provided base position)
+    getTriggerTimeFromInterval(interval, timePos, basePos);
 
     {
-        DEBUG_TIME_LINE("timePos.pos_min=%d, m_timePos.pos_min=%d", timePos.pos_min, m_timePos.pos_min);
-        DEBUG_TIME_LINE("timePos.pos_sec=%d, m_timePos.pos_sec=%d", timePos.pos_sec, m_timePos.pos_sec);
-        DEBUG_TIME_LINE("timePos.pos_ms=%d, m_timePos.pos_ms=%d", timePos.pos_ms, m_timePos.pos_ms);
+        DEBUG_TIME_LINE("timePos.pos_min=%d, basePos.pos_min=%d", timePos.pos_min, basePos.pos_min);
+        DEBUG_TIME_LINE("timePos.pos_sec=%d, basePos.pos_sec=%d", timePos.pos_sec, basePos.pos_sec);
+        DEBUG_TIME_LINE("timePos.pos_ms=%d, basePos.pos_ms=%d", timePos.pos_ms, basePos.pos_ms);
 
         // if minutes not equal to current minute, first insert it to it's minute slot
-        if (timePos.pos_min != m_timePos.pos_min)
+        if (timePos.pos_min != basePos.pos_min)
         {
             DEBUG_TIME_LINE("insert to %d minute slot", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
             m_eventSlotList[m_firstLevelCount + m_secondLevelCount + timePos.pos_min]
                     .push_back(event);
         }
         // if minutes is equal, but second changed, insert slot to this  integral point second
-        else if (timePos.pos_sec != m_timePos.pos_sec)
+        else if (timePos.pos_sec != basePos.pos_sec)
         {
             DEBUG_TIME_LINE("insert to %d second slot", m_firstLevelCount + timePos.pos_sec);
             m_eventSlotList[m_firstLevelCount + timePos.pos_sec].push_back(event);
         }
         //if minute and second is equal, mean this event will not be trigger in integral point, set it to ms slot
-        else if (timePos.pos_ms != m_timePos.pos_ms)
+        else if (timePos.pos_ms != basePos.pos_ms)
         {
             DEBUG_TIME_LINE("insert to %d milliSecond slot", timePos.pos_ms);
             m_eventSlotList[timePos.pos_ms].push_back(event);

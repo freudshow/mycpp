@@ -51,9 +51,9 @@ class TimeWheel {
 
         uint32_t getCurrentMs(TimePos_t timePos);
         uint32_t createEventId(void);
-        uint32_t processEvent(std::list<Event_t> &eventList);
-        void getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos);
-        void insertEventToSlot(uint32_t interval, Event_t &event);
+        uint32_t processEvent(std::list<Event_t> &eventList, TimePos_t currentPos);
+        void getTriggerTimeFromInterval(uint32_t interval, TimePos_t &timePos, TimePos_t basePos);
+        void insertEventToSlot(uint32_t interval, Event_t &event, TimePos_t basePos);
 
         EventSlotList_t m_eventSlotList;        // event slot list
         TimePos_t m_timePos;                    // current time position of wheel

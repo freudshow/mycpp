@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <iostream>
 #include <unistd.h>
 #include <libgen.h>
@@ -11,7 +12,7 @@ using namespace std;
 
 #define SCHED_FREQUENCE       (100) //ms
 
-arg_t g_funcArg[7] = { 0 };
+arg_t g_funcArg[17] = { 0 };
 
 void funccc(void *arg)
 {
@@ -22,7 +23,7 @@ void funccc(void *arg)
     }
 
     arg_t *ev = (arg_t*) arg;
-    DEBUG_TIME_LINE("exec event[%u]: value-%u, interval: %u", ev->id, ev->val, ev->interval);
+    DEBUG_TIME_LINE("exec event[%u]: value-%u, interval-%u", ev->id, ev->val, ev->interval);
 }
 
 int main(int argc, char *argv[])
@@ -31,13 +32,14 @@ int main(int argc, char *argv[])
 
     for (uint32_t i = 0; i < ARRAY_SIZE(g_funcArg); i++)
     {
-        g_funcArg[i].id = i;
+        g_funcArg[i].id = i + 1;
         g_funcArg[i].val = SCHED_FREQUENCE * (i + 1);
         g_funcArg[i].interval = SCHED_FREQUENCE * (i + 1);
         wheel.createTimingEvent(SCHED_FREQUENCE * (i + 1), funccc, &g_funcArg[i]);
     }
 
-    while (1)
+    uint16_t count = 30;
+    while (count--)
     {
         sleep(1);
     }
