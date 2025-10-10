@@ -20,6 +20,9 @@ typedef struct TimePos {
 typedef void (*EventCallback_t)(void*);
 
 typedef struct eventArg {
+        uint32_t startTime;
+        uint32_t expectRunTime;
+        uint32_t runCount;
         uint32_t id;
         uint32_t val;
         uint32_t interval;
@@ -63,7 +66,7 @@ class TimeWheel {
         const uint32_t m_secondLevelCount = 60; // second level, 1 minute equals to 60 seconds, so this value is 60
         uint32_t m_thirdLevelCount;             // minute level
 
-        uint32_t m_steps;                       // steps of ms, accuracy of time wheel
+        uint32_t m_steps;                       // milliseconds of one tick, accuracy of time wheel
         uint32_t m_increaseId;                  // event id increase number
         std::mutex m_mutex;                     // mutex for event slot list
 };
@@ -71,7 +74,7 @@ class TimeWheel {
 #ifdef __cplusplus
 extern "C" {
 #endif
-
+    uint32_t get_local_time_ms(void);
     void debugBufFormat2fp(FILE *fp, const char *file, const char *func,
             int line, char *buf, int len, const char *fmt, ...);
 

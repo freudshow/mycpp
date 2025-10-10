@@ -6,6 +6,13 @@
 #include <thread>
 #include <stdarg.h>
 
+uint32_t get_local_time_ms(void)
+{
+    struct timeval systime;
+    gettimeofday(&systime, NULL);
+    return (systime.tv_sec * 1000 + systime.tv_usec / 1000);
+}
+
 void get_local_time(char *buf, uint32_t bufLen)
 {
     if (bufLen < 24)
@@ -304,15 +311,15 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList, TimePos_t curren
     for (auto event = eventList.begin(); event != eventList.end(); event++)
     {
         //caculate the current ms
-    uint32_t currentMs = getCurrentMs(currentPos);
+        uint32_t currentMs = getCurrentMs(currentPos);
         //caculate last  time(ms) this event was processed
         uint32_t lastProcessedMs = getCurrentMs(event->timePos);
 
-    //caculate the distance between now and last time(ms)
-    // The total period the wheel covers is (minutes_in_third_level * 60 * 1000)
-    // Previously this used (m_secondLevelCount + 1) which was incorrect and
-    // could cause distance calculations to be off (preventing events from firing).
-    uint32_t period = m_thirdLevelCount * 60 * 1000;
+        //caculate the distance between now and last time(ms)
+        // The total period the wheel covers is (minutes_in_third_level * 60 * 1000)
+        // Previously this used (m_secondLevelCount + 1) which was incorrect and
+        // could cause distance calculations to be off (preventing events from firing).
+        uint32_t period = m_thirdLevelCount * 60 * 1000;
         uint32_t distanceMs = (currentMs + period - lastProcessedMs) % period;
 
         //if interval == distanceMs, need process this event
@@ -328,8 +335,8 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList, TimePos_t curren
         else
         {
             //this condition will be trigger when process the integral point
-            DEBUG_TIME_LINE("id: %u, interval: %u, distanceMs: %u, event->interval != distanceMs",
-                    event->id, event->interval, distanceMs);
+//            DEBUG_TIME_LINE("id: %u, interval: %u, distanceMs: %u, event->interval != distanceMs",
+//                    event->id, event->interval, distanceMs);
             // although this event in this positon, but it not arriving timing, it will continue move to next slot caculate by distance ms.
             uint32_t remaining;
             if (event->interval > distanceMs)
@@ -358,35 +365,33 @@ uint32_t TimeWheel::processEvent(std::list<Event_t> &eventList, TimePos_t curren
  **************************************************************************/
 void TimeWheel::insertEventToSlot(uint32_t interval, Event_t &event, TimePos_t basePos)
 {
-    DEBUG_TIME_LINE("insertEventToSlot");
-
     TimePos_t timePos = { 0 };
 
     //caculate the which slot this event should be set to (based on provided base position)
     getTriggerTimeFromInterval(interval, timePos, basePos);
 
     {
-        DEBUG_TIME_LINE("timePos.pos_min=%d, basePos.pos_min=%d", timePos.pos_min, basePos.pos_min);
-        DEBUG_TIME_LINE("timePos.pos_sec=%d, basePos.pos_sec=%d", timePos.pos_sec, basePos.pos_sec);
-        DEBUG_TIME_LINE("timePos.pos_ms=%d, basePos.pos_ms=%d", timePos.pos_ms, basePos.pos_ms);
+//        DEBUG_TIME_LINE("timePos.pos_min=%d, basePos.pos_min=%d", timePos.pos_min, basePos.pos_min);
+//        DEBUG_TIME_LINE("timePos.pos_sec=%d, basePos.pos_sec=%d", timePos.pos_sec, basePos.pos_sec);
+//        DEBUG_TIME_LINE("timePos.pos_ms=%d, basePos.pos_ms=%d", timePos.pos_ms, basePos.pos_ms);
 
         // if minutes not equal to current minute, first insert it to it's minute slot
         if (timePos.pos_min != basePos.pos_min)
         {
-            DEBUG_TIME_LINE("insert to %d minute slot", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
+//            DEBUG_TIME_LINE("insert to %d minute slot", m_firstLevelCount + m_secondLevelCount + timePos.pos_min);
             m_eventSlotList[m_firstLevelCount + m_secondLevelCount + timePos.pos_min]
                     .push_back(event);
         }
         // if minutes is equal, but second changed, insert slot to this  integral point second
         else if (timePos.pos_sec != basePos.pos_sec)
         {
-            DEBUG_TIME_LINE("insert to %d second slot", m_firstLevelCount + timePos.pos_sec);
+//            DEBUG_TIME_LINE("insert to %d second slot", m_firstLevelCount + timePos.pos_sec);
             m_eventSlotList[m_firstLevelCount + timePos.pos_sec].push_back(event);
         }
         //if minute and second is equal, mean this event will not be trigger in integral point, set it to ms slot
         else if (timePos.pos_ms != basePos.pos_ms)
         {
-            DEBUG_TIME_LINE("insert to %d milliSecond slot", timePos.pos_ms);
+//            DEBUG_TIME_LINE("insert to %d milliSecond slot", timePos.pos_ms);
             m_eventSlotList[timePos.pos_ms].push_back(event);
         }
     }
