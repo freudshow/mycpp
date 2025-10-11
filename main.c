@@ -30,7 +30,7 @@ void funccc(void *arg)
             ev->id, ev->startTimeMs, ev->runCount, ev->expectTimeMs, nowMs, diff, ev->interval, error);
 }
 
-int main(int argc, char *argv[])
+int main(int argc __attribute__((unused)), char *argv[] __attribute__((unused)))
 {
     EventList_t *eventList = (EventList_t*) calloc(1, sizeof(EventList_t));
     if (eventList == NULL)
