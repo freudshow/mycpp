@@ -241,7 +241,7 @@ static void* loopForInterval(void *arg)
     clock_gettime(CLOCK_MONOTONIC, &startTime);
 
     const int64_t stepNs = (int64_t) wheel->steps * 1000000LL; /* nanoseconds per step */
-    uint64_t processedTicks = 0;
+    uint64_t processedTicks = 0; //how many slots passed since time wheel started
 
     while (1)
     {
@@ -283,7 +283,7 @@ static void* loopForInterval(void *arg)
             continue;
         }
 
-        uint32_t totalPassed = (uint32_t) (ticksSinceStart - processedTicks);
+        uint32_t totalPassed = (uint32_t) (ticksSinceStart - processedTicks); //how many slots passed
         if (totalPassed == 0)
         {
             continue;
